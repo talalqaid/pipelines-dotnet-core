@@ -1,0 +1,56 @@
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+  buildArtifactName: 'drop'
+
+stages:
+- stage: Build
+  displayName: 'Build and Test'
+  jobs:
+  - job: Build
+    steps:
+    - task: UseDotNet@2
+      inputs:
+        packageType: 'sdk'
+        version: '6.x' # Adjust according to your .NET version
+        installationPath: $(Agent.ToolsDirectory)/dotnet
+
+    - script: dotnet restore
+      displayName: 'Restore dependencies'
+
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: 'Build application'
+
+    - script: dotnet test --configuration $(buildConfiguration) --logger trx
+      displayName: 'Run tests'
+
+    - script: dotnet publish -c $(buildConfiguration) -o $(Build.ArtifactStagingDirectory)
+      displayName: 'Publish application'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: '$(buildArtifactName)'
+
+- stage: Deploy
+  displayName: 'Deploy to Server'
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - job: Deploy
+    steps:
+    - task: DownloadBuildArtifacts@0
+      inputs:
+        buildType: 'current'
+        downloadType: 'single'
+        artifactName: '$(buildArtifactName)'
+        downloadPath: '$(Build.ArtifactStagingDirectory)'
+
+    - script: echo 'Deploying application...'
+      displayName: 'Deploy Step' 
+      # Replace
