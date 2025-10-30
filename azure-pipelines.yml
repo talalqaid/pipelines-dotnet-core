@@ -1,0 +1,76 @@
+# ASP.NET Core
+# Build and test ASP.NET Core projects targeting .NET.
+# https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
+
+trigger:
+- master
+
+pool:
+  vmImage: ubuntu-latest
+
+variables:
+  buildConfiguration: 'Release'
+
+stages:
+# =========================
+# Stage 1: Build
+# =========================
+- stage: Build
+  displayName: Build
+  jobs:
+  - job: BuildJob
+    displayName: Restore, Build, Publish, and Archive
+    steps:
+    - script: dotnet restore
+      displayName: 'dotnet restore'
+
+    - script: dotnet build --configuration $(buildConfiguration)
+      displayName: 'dotnet build $(buildConfiguration)'
+
+    - script: dotnet publish --configuration $(buildConfiguration) --output $(Build.ArtifactStagingDirectory)/webapp
+      displayName: 'dotnet publish $(buildConfiguration)'
+
+    - task: ArchiveFiles@2
+      displayName: 'Archive published output'
+      inputs:
+        rootFolderOrFile: '$(Build.ArtifactStagingDirectory)/webapp'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish artifact'
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+        ArtifactName: 'drop'
+        publishLocation: 'Container'
+
+# =========================
+# Stage 2: Deploy
+# =========================
+- stage: Deploy
+  displayName: Deploy
+  dependsOn: Build
+  condition: succeeded()
+  jobs:
+  - deployment: DeployWebApp
+    displayName: 'Deploy to Azure Web App'
+    environment: 'prod'   # or your chosen environment name
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - task: DownloadPipelineArtifact@2
+            displayName: 'Download build artifact'
+            inputs:
+              artifact: 'drop'
+              path: '$(Pipeline.Workspace)/drop'
+
+          # Replace the three inputs below with your real values
+          - task: AzureWebApp@1
+            displayName: 'Deploy package to Azure Web App'
+            inputs:
+              azureSubscription: '<your-service-connection>'
+              appName: '<your-app-service-name>'
+              package: '$(Pipeline.Workspace)/drop/webapp.zip'
